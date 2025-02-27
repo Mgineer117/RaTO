@@ -1,98 +1,88 @@
-# SNAC: Specialized Neurons and Architecture with Clustering
-
-![SNAC logo](snac_logo.png)
-
-This repository presents a **Hierarchical Reinforcement Learning (HRL)** approach in **Grid World**, incorporating **Successor Features (SFs)** with the following enhancements:
-- **Clustering in eigenspace** to preserve all computed eigenvectors and prevent information loss.
-- **Simultaneous reward and state feature decompositions**, adapting to both reward structures and the navigational diffusion properties of the environment.
-- **Intuition and foundational support for Successor Features (SF) Implementation**, filling the gap in the current literature, where most work focuses on Successor Representation (SR) without comprehensive code and intuitive explanations for SF.
-
-Additionally, this repository includes implementations of previous **state-of-the-art (SOTA)** methods, such as **EigenOption**, **CoveringOption**, and a simple **PPO** approach, which serve as baselines for comparison. For more details, refer to the workshop paper of the older version of **SNAC**: [SNAC Workshop Paper](https://ala2022.github.io/papers/ALA2022_paper_41.pdf).
+Below is an augmented version of the report with an added experimental remark that emphasizes our observation in practice. The new remark is integrated as an additional section with a detailed explanation.
 
 ---
 
-## Key Notes
+## 1. Background and Motivation
 
-### SNAC-Specific Notes
-- Due to the non-uniqueness of the sign in Singular Value Decomposition (SVD), we treat each eigenvector as two distinct vectors, i.e., **e = (+e / -e)**.
-
-### Baseline Notes
-
-- [**EigenOption**](https://openreview.net/pdf?id=Bk8ZcAxR-) selects the top `n` eigenvectors from a diffusive-type matrix (e.g., graph Laplacian, Successor Representation, or Successor Features).
-- [**CoveringOption**](https://openreview.net/pdf?id=SkeIyaVtwB) selects the top 1 eigenvector and iteratively updates the diffusive matrix to improve the explanation, especially useful in environments with hard-to-explore state transitions.
+In reinforcement learning (RL), the goal is to learn policies that minimize long‐term cost (or maximize reward) in a sequential decision-making problem. A central object in RL is the value function, which captures the expected cumulative cost (or reward) when starting from a given state and following a policy. In many control problems, particularly when ensuring stability is critical, it is useful to have a Lyapunov function—a scalar function that decreases along trajectories—to certify stability. Under suitable conditions, the value function itself can serve as a Lyapunov function.
 
 ---
 
-## Usage Instructions
+## 2. Value Function in Reinforcement Learning
 
-### Setting up the Conda Environment
+Consider a Markov decision process (MDP) with state space \(\mathcal{S}\), action space \(\mathcal{A}\), a transition function \(f\) (or probability transition kernel \(P\)), and an immediate cost function \(r(x,a)\). For a given policy \(\pi\), the value function \(v(x)\) is defined as
 
-To begin, create and activate the **snac** environment by running:
+\[
+v(x) = r(x, \pi(x)) + \gamma\, v\big(f(x, \pi(x))\big),
+\]
 
-```bash
-conda create --name snac python==3.10.*
-conda activate snac
+where \(\gamma \in (0,1)\) is the discount factor (or \(\gamma=1\) in an average-cost formulation under proper conditions). Notice that if the cost \(r(x, \pi(x))\) is strictly positive away from the origin—say, if \(r(x, \pi(x)) > 0\) for all \(x \neq 0\) and \(r(0,\pi(0)) = 0\)—this recursive definition naturally imposes a decrease in the value function along the system’s trajectory.
 
-```
+---
 
-Then, install the required packages using pip:
-```
-pip install -r requirements.txt
-```
+## 3. Lyapunov Functions in Stability Analysis
 
-If there is Mujoco rendering error (glGetError and etc.), run the following commands:
-```
-echo "export MUJOCO_GL=osmesa" >> ~/.bashrc
-source ~/.bashrc
-sudo apt-get install libosmesa6-dev
-sudo apt-get install python3-opengl
-```
-and *(make sure you reactivate virtual env snac)*
-```
-conda install -c anaconda pyopengl
-conda install -c conda-forge libstdcxx-ng
-```
+A Lyapunov function \(W(x)\) for a system is a positive-definite function that decreases along trajectories. For a discrete-time system 
+\[
+x_{k+1} = f(x_k, u_k),
+\]
+a candidate Lyapunov function \(W(x)\) must satisfy:
+1. **Positivity:** \(W(x) > 0\) for all \(x \neq 0\) and \(W(0)=0\).
+2. **Descent:** \(W(x_{k+1}) - W(x_k) < 0\) for all \(x \neq 0\).
 
-## Experimental Design
-**Fourroom Environment**
-- Time steps: 100
-- Successor Feature (SF) matrix is built using (100 trajectories x feature_dim)
-- Only the goal position is stochastic while others remain constant (agent loc, grid). This is to induce the dynamics in the reward structure of the environment as the simplest case.
-- Singular Value Decomposition (SVD) is applied for eigenpurpose discovery
-- Intrinsic reward is calculated as the dot product of the eigenvector and the feature difference: `eigenvector^T * (next_feature - current_feature)`
-- 
-**CtF**
-- Time steps: ??? (reasonable amount)
-- Successor Feature (SF) matrix is built using (100 trajectories x feature_dim) # I assume still 100 if so no change is required
-- The grid layout, agent's starting position, and enemy agents' positions are fixed, while the enemy agents move dynamically, altering the reward structure.
+When these conditions hold, \(W(x)\) certifies that the system is (locally or globally) asymptotically stable.
 
-**PointNavigation**
-TBD
+---
 
-## How to Import Pre-Trained Model
+## 4. Establishing the Connection
 
-The training sequence proceeds as follows: SFs (Successor Features) -> OP (Option Training) -> HC (Hierarchical Training). Throughout this process, models are saved periodically in:
+### 4.1. Contraction and Descent
 
-```log/train_log/```
+The Bellman operator used in value iteration is a contraction mapping:
+\[
+v_{k+1}(x) = \min_{a\in\mathcal{A}}\Big\{ r(x,a) + \gamma\, v_k\big(f(x,a)\big) \Big\},
+\]
+which guarantees that the successive value estimates converge to the unique fixed point \(v^*(x)\). This contraction property is analogous to a Lyapunov descent condition in function space, as the “distance” from the fixed point decreases with each iteration.
 
-Inside this folder, you'll find subdirectories such as `SF`, `OP`, `HC`, etc., where the trained models are stored. To import a trained model for evaluation, move the desired model from the appropriate subfolder to:
+### 4.2. Value Function as a Lyapunov Candidate
 
-```log/eval_log/model_for_eval/```
+Assume we work in a cost-minimization framework where the cost \(r(x,\pi(x))\) is strictly positive for all \(x \neq 0\) and zero at the origin. Then the value function (possibly normalized so that \(v(0)=0\)) satisfies:
+\[
+v(x) = r(x, \pi(x)) + v\big(f(x,\pi(x))\big).
+\]
+Because \(r(x, \pi(x)) > 0\) when \(x \neq 0\), it immediately follows that
+\[
+v(x) > v\big(f(x,\pi(x))\big) \quad \text{for } x \neq 0.
+\]
+Thus, along trajectories generated by the policy \(\pi\), the value function decreases. This is precisely the condition required for a Lyapunov function: it demonstrates a monotonic decrease toward the equilibrium. In this sense, the optimal (or approximate) value function naturally acts as a Lyapunov function.
 
-After moving the model, rename the file (e.g., `model_n.p` or `best_model.p`) to match one of the following, depending on its type:
-- sf_model
-- op_model
-- hc_model
+---
 
-Finally, enable the appropriate model import flags in the argparse file:
+## 5. Experimental Remark: Exploiting Value Functions as Lyapunov Functions
 
-```import-sf-model```
-```import-op-model```  
-```import-hc-model```
+**Remark:**  
+_In our experiments, we exploit the fact that value functions in RL are Lyapunov functions if the costs are strictly positive away from the origin. This follows directly from the definition of the value function. Specifically, if we have_
+\[
+v(x) = r(x, \pi(x)) + v\big(f(x,\pi(x))\big),
+\]
+_and if \(r(x, \pi(x)) > 0\) for all \(x \neq 0\), then it must be that_
+\[
+v(x) > v\big(f(x,\pi(x))\big) \quad \text{for all } x \neq 0.
+\]
+_This inequality implies that the value function decreases along system trajectories, making it a valid Lyapunov candidate. In practice, this property allows us to use the value function computed via approximate dynamic programming as a tool for certifying stability and ensuring safety, without the need to separately construct a Lyapunov function. This “by-product” of the RL algorithm is particularly valuable in settings such as safe RL, where ensuring that the system remains stable (or safe) throughout learning is critical._
 
-Make sure to import the OP model, as the SF model is a prerequisite.
+**Explanation:**  
+- **Strictly Positive Costs:** When the immediate cost \(r(x, \pi(x))\) is strictly positive for all nonzero states, every transition under the policy incurs a positive “penalty” unless the system is at the origin.
+- **Recursive Decrease:** The recursive nature of the value function implies that the current cost plus the expected future cost must be higher than the future cost alone. Hence, the value at the current state is strictly higher than at the next state.
+- **Stability Certification:** This descent property mirrors the classical Lyapunov condition used in control theory to certify stability. Therefore, by simply computing the value function, we obtain a function that can serve to assess (and even enforce) stability along trajectories.
+- **Practical Benefit:** In our experiments, this observation enables us to extract a Lyapunov candidate “for free” from the approximate dynamic programming process. It streamlines the integration of safety constraints into RL by leveraging the inherent properties of the value function, reducing the need for additional design efforts to obtain a Lyapunov function.
 
+---
 
-python3 main.py --algo-name SNAC --num-vector 10 
-```
-where algo-name = {SNAC, EigenOption, CoveringOption, PPO} and num-vector is the total number of eigenpurposes each algorithmn will use.
+## 6. Conclusion
+
+Under appropriate conditions—specifically, when the immediate costs are strictly positive away from the origin—the value function in reinforcement learning not only guides optimal decision-making but also inherently satisfies the properties of a Lyapunov function. This dual role provides a powerful tool in both theoretical analyses and practical implementations, enabling safe and stable policy learning as a natural by-product of approximate dynamic programming. The experimental observation that the value function decreases along trajectories underpins its use as a Lyapunov candidate in our work.
+
+---
+
+Would you like further details on any specific aspect of these derivations or examples from our experiments?
